@@ -1,4 +1,4 @@
-# app.py — SongSnap++ (clean version with post-round Spotify embed)
+# app.py — SongSnap++ (NaN-safe audio + Spotify embed after round)
 import os, time, json, random, hashlib, re
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -14,8 +14,6 @@ st.set_page_config(page_title="SongSnap++", page_icon="🎵", layout="centered")
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", os.getenv("SUPABASE_URL", ""))
 SUPABASE_ANON_KEY = st.secrets.get("SUPABASE_ANON_KEY", os.getenv("SUPABASE_ANON_KEY", ""))
 SUPABASE_TABLE = st.secrets.get("SUPABASE_TABLE", os.getenv("SUPABASE_TABLE", "songsnap_scores"))
-
-# IMPORTANT: Use the RAW GitHub URL (or any http/https/local path)
 DATASET_URL = st.secrets.get(
     "DATASET_URL",
     os.getenv("DATASET_URL", "https://raw.githubusercontent.com/kathleendeleon/music_trivia_app/refs/heads/main/songsnap_from_spotify3.csv")
@@ -53,17 +51,22 @@ def score_round(correct: bool, reveal_level: int, start_time: float) -> int:
     return 50 if not correct else max(50, base - penalty_reveal - penalty_time + emoji_perfect)
 
 def first_available_preview(row) -> str:
+    # row is a Series-ish; use .get for dict-like access
     for k in ("preview_1s_url", "preview_3s_url", "preview_5s_url"):
         v = row.get(k, "")
         if isinstance(v, str) and v.strip():
-            return v
+            return v.strip()
     return ""
+
+def is_valid_audio_url(u: str) -> bool:
+    return isinstance(u, str) and u.startswith(("http://", "https://", "data:audio"))
 
 def extract_spotify_track_id(spotify_url: str | None) -> str | None:
     if not spotify_url or not isinstance(spotify_url, str):
         return None
     m = re.search(r"spotify\.com/track/([A-Za-z0-9]+)", spotify_url)
-    if m: return m.group(1)
+    if m:
+        return m.group(1)
     m = re.search(r"spotify:track:([A-Za-z0-9]+)", spotify_url)
     return m.group(1) if m else None
 
@@ -86,8 +89,13 @@ def submit_score(date_str: str, username: str, score: int, streak: int, guesses:
         "elapsed_ms": elapsed_ms,
     }
     try:
-        # simple upsert-by-hand (read then update/insert)
-        existing = sb_client.table(SUPABASE_TABLE).select("*").eq("date", date_str).eq("username", payload["username"]).execute()
+        existing = (
+            sb_client.table(SUPABASE_TABLE)
+            .select("*")
+            .eq("date", date_str)
+            .eq("username", payload["username"])
+            .execute()
+        )
         if existing.data:
             best = max(existing.data[0].get("score", 0), score)
             payload["score"] = best
@@ -115,12 +123,11 @@ def fetch_leaderboard(date_str: str, limit: int = 25) -> pd.DataFrame:
         st.caption(f"Leaderboard unavailable: {e}")
         return pd.DataFrame()
 
-# ------------------ DATA LOADER ------------------
+# ------------------ DATA LOADER (NaN-safe) ------------------
 @st.cache_data(show_spinner=True)
 def load_tracks(url_or_path: str) -> pd.DataFrame:
     df = pd.read_csv(url_or_path)
 
-    # required columns
     required = [
         "id","title","artist","emoji","choices_json","answer_idx",
         "preview_1s_url","preview_3s_url","preview_5s_url","context_hint",
@@ -131,11 +138,16 @@ def load_tracks(url_or_path: str) -> pd.DataFrame:
         st.error(f"Dataset missing required columns: {missing}")
         st.stop()
 
-    # optional column: spotify_url (for post-round embed)
+    # Optional column for embed
     if "spotify_url" not in df.columns:
         df["spotify_url"] = ""
 
-    # coerce JSON-like columns robustly
+    # Ensure preview/embed columns are strings (replace NaN/None)
+    for c in ["preview_1s_url", "preview_3s_url", "preview_5s_url", "spotify_url"]:
+        if c in df.columns:
+            df[c] = df[c].fillna("").astype(str)
+
+    # Coerce JSON-like columns robustly
     def _coerce(series: pd.Series):
         out = []
         for x in series:
@@ -203,21 +215,25 @@ row = st.session_state.row
 st.subheader("Emoji Riddle")
 st.markdown(f"<div style='font-size:2.2rem'>{row['emoji']}</div>", unsafe_allow_html=True)
 
-# Audio snippet (graceful when missing)
+# Audio snippet (NaN-safe + valid URL check)
 st.subheader("Audio Snippet")
 levels = [
     (row.get("preview_1s_url",""), "🔊 1s tease"),
     (row.get("preview_3s_url",""), "🔊 3s reveal"),
     (row.get("preview_5s_url",""), "🔊 5s full clip"),
 ]
+# Normalize potential NaN/None to empty string
+levels = [((u if isinstance(u, str) else ""), lbl) for (u, lbl) in levels]
+
 url, label = levels[st.session_state.reveal]
 if not url:
     url = first_available_preview(row)
-has_audio = bool(url)
+
+has_audio = is_valid_audio_url(url)
 
 st.caption(label if has_audio else "No audio preview for this track")
 if has_audio:
-    st.audio(url)
+    st.audio(url)  # optionally: st.audio(url, format="audio/mp3")
 else:
     st.info("No preview available. You can still guess from the emoji hint!")
 
@@ -262,7 +278,7 @@ def guess(i: int):
 
     st.caption(f"Round points: **{delta}**")
 
-    # Post-round: offer Spotify embed without spoiling earlier
+    # Post-round: Spotify embed (no spoilers earlier)
     tid = extract_spotify_track_id(row.get("spotify_url", ""))
     if tid:
         with st.expander("🎧 Listen on Spotify"):
