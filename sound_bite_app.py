@@ -18,7 +18,7 @@ SUPABASE_TABLE = st.secrets.get("SUPABASE_TABLE", os.getenv("SUPABASE_TABLE", "s
 # IMPORTANT: Use the RAW GitHub URL (or any http/https/local path)
 DATASET_URL = st.secrets.get(
     "DATASET_URL",
-    os.getenv("DATASET_URL", "https://raw.githubusercontent.com/youruser/yourrepo/main/your_dataset.csv")
+    os.getenv("DATASET_URL", "https://raw.githubusercontent.com/kathleendeleon/music_trivia_app/refs/heads/main/songsnap_from_spotify3.csv")
 )
 
 # ------------------ SUPABASE (optional) ------------------
