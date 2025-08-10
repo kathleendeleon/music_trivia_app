@@ -1,4 +1,5 @@
 streamlit==1.37.0
-pandas
-supabase
-python-dateutil
+pandas>=2.2.2
+python-dateutil>=2.9.0
+supabase==2.5.1
+backports.zoneinfo; python_version < "3.9"
