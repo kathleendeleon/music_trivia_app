@@ -8,26 +8,69 @@ import pandas as pd
 # --- CONFIG ---
 st.set_page_config(page_title="SongSnap++", page_icon="🎵", layout="centered")
 
-# --- ENV (Supabase optional but recommended) ---
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+# --- SECRETS & ENVS (Streamlit Cloud first, env vars as fallback) ---
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", os.getenv("SUPABASE_URL", ""))
+SUPABASE_ANON_KEY = st.secrets.get("SUPABASE_ANON_KEY", os.getenv("SUPABASE_ANON_KEY", ""))
+SUPABASE_TABLE = st.secrets.get("SUPABASE_TABLE", os.getenv("SUPABASE_TABLE", "songsnap_scores"))
+DATASET_URL = st.secrets.get(
+    "DATASET_URL",
+    # Prefer "raw.githubusercontent.com" when loading CSVs from GitHub
+    os.getenv("DATASET_URL", "https://raw.githubusercontent.com/kathleendeleon/music_trivia_app/main/trial_songset_40.csv")
+)
 
-# Lazy import only if keys exist
+# --- SUPABASE CLIENT (optional) ---
 sb_client = None
 if SUPABASE_URL and SUPABASE_ANON_KEY:
-    from supabase import create_client, Client
-    sb_client: "Client" = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    try:
+        from supabase import create_client, Client
+        sb_client: "Client" = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    except Exception as e:
+        st.warning(f"Supabase not initialized: {e}. Leaderboard will be disabled.")
 
 # --- DATA ---
-@st.cache_data
-def load_tracks(path: str):
-    df = pd.read_csv(path) 
-    # coerce json-like columns
-    for c in ["facts_json", "choices_json"]:
-        df[c] = df[c].apply(lambda x: json.loads(x.replace("’","'").replace("—","-")) if isinstance(x,str) else [])
+@st.cache_data(show_spinner=False)
+def _coerce_json_like(series: pd.Series):
+    # Handles strings like '["a","b"]', stray dashes, smart quotes, and non-strings
+    out = []
+    for x in series:
+        if isinstance(x, list):
+            out.append(x)
+            continue
+        if not isinstance(x, str) or not x.strip():
+            out.append([])
+            continue
+        s = x.replace("’", "'").replace("—", "-").strip()
+        try:
+            out.append(json.loads(s))
+        except Exception:
+            # If it's not valid JSON, fall back to [] to avoid crashing
+            out.append([])
+    return out
+
+@st.cache_data(show_spinner=True)
+def load_tracks(url_or_path: str) -> pd.DataFrame:
+    # Pandas supports http(s) and local files
+    df = pd.read_csv(url_or_path)
+    # Normalize required columns
+    required = [
+        "id","title","artist","emoji","choices_json","answer_idx",
+        "preview_1s_url","preview_3s_url","preview_5s_url","context_hint",
+        "facts_json","pack","year","tv_movie_ref"
+    ]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Dataset missing required columns: {missing}")
+
+    # Coerce JSON-like columns
+    df["choices_json"] = _coerce_json_like(df["choices_json"])
+    df["facts_json"]   = _coerce_json_like(df["facts_json"])
     return df
 
-tracks = load_tracks("https://github.com/kathleendeleon/music_trivia_app/blob/main/trial_songset_40.csv")  # place CSV next to .py or use full path
+try:
+    tracks = load_tracks(DATASET_URL)
+except Exception as e:
+    st.error(f"Failed to load dataset from DATASET_URL.\n{e}")
+    st.stop()
 
 # --- UTILS ---
 CENTRAL = ZoneInfo("America/Chicago")
@@ -38,6 +81,8 @@ def today_seed():
     return int(hashlib.sha256(d.encode()).hexdigest(), 16)
 
 def pick_daily_row(df: pd.DataFrame) -> pd.Series:
+    if df.empty:
+        raise ValueError("Track list is empty.")
     rng = random.Random(today_seed())
     idx = rng.randrange(len(df))
     return df.iloc[idx]
@@ -65,27 +110,36 @@ def submit_score(date_str: str, username: str, score: int, streak: int, guesses:
         "reveal_level": reveal_level,
         "elapsed_ms": elapsed_ms,
     }
-    # Upsert on (date, username) keeping the best score
-    # Strategy: fetch existing, keep max
-    existing = sb_client.table("songsnap_scores").select("*").eq("date", date_str).eq("username", payload["username"]).execute()
-    if existing.data:
-        best = max(existing.data[0]["score"], score)
-        payload["score"] = best
-        sb_client.table("songsnap_scores").update(payload).eq("date", date_str).eq("username", payload["username"]).execute()
-    else:
-        sb_client.table("songsnap_scores").insert(payload).execute()
+    try:
+        # Upsert on (date, username) keeping the best score
+        existing = sb_client.table(SUPABASE_TABLE).select("*").eq("date", date_str).eq("username", payload["username"]).execute()
+        if existing.data:
+            best = max(existing.data[0].get("score", 0), score)
+            payload["score"] = best
+            sb_client.table(SUPABASE_TABLE).update(payload).eq("date", date_str).eq("username", payload["username"]).execute()
+        else:
+            sb_client.table(SUPABASE_TABLE).insert(payload).execute()
+    except Exception as e:
+        # Don’t crash the game if Supabase write fails
+        st.toast(f"Could not submit score: {e}", icon="⚠️")
 
 def fetch_leaderboard(date_str: str, limit: int = 25):
     if not sb_client:
         return pd.DataFrame()
-    res = sb_client.table("songsnap_scores") \
-        .select("username,score,streak,guesses,reveal_level,elapsed_ms") \
-        .eq("date", date_str) \
-        .order("score", desc=True) \
-        .order("elapsed_ms", desc=False) \
-        .limit(limit) \
-        .execute()
-    return pd.DataFrame(res.data)
+    try:
+        res = (
+            sb_client.table(SUPABASE_TABLE)
+            .select("username,score,streak,guesses,reveal_level,elapsed_ms")
+            .eq("date", date_str)
+            .order("score", desc=True)
+            .order("elapsed_ms", desc=False)
+            .limit(limit)
+            .execute()
+        )
+        return pd.DataFrame(res.data)
+    except Exception as e:
+        st.caption(f"Leaderboard unavailable: {e}")
+        return pd.DataFrame()
 
 # --- STATE ---
 if "mode" not in st.session_state:
@@ -133,13 +187,21 @@ st.markdown(f"<div style='font-size:2.2rem'>{row['emoji']}</div>", unsafe_allow_
 # --- AUDIO ---
 st.subheader("Audio Snippet")
 levels = [
-    (row["preview_1s_url"], "🔊 1s tease"),
-    (row["preview_3s_url"], "🔊 3s reveal"),
-    (row["preview_5s_url"], "🔊 5s full clip"),
+    (row.get("preview_1s_url",""), "🔊 1s tease"),
+    (row.get("preview_3s_url",""), "🔊 3s reveal"),
+    (row.get("preview_5s_url",""), "🔊 5s full clip"),
 ]
 url, label = levels[st.session_state.reveal]
 st.caption(f"{label} — extending reveals costs points")
-st.audio(url)
+
+# Graceful fallback if previews are missing
+if not url:
+    # Try any available preview among the three
+    url = next((u for u, _ in levels if u), "")
+if url:
+    st.audio(url)
+else:
+    st.warning("No preview available for this track. Try the next song ▶️")
 
 c1, c2 = st.columns(2)
 with c1:
@@ -207,4 +269,5 @@ if st.session_state.mode == "Daily Challenge":
         else:
             st.dataframe(lb)
     else:
-        st.caption("Set SUPABASE_URL and SUPABASE_ANON_KEY to enable the leaderboard.")
+        st.caption("Set SUPABASE_URL and SUPABASE_ANON_KEY (in secrets) to enable the leaderboard.")
+
