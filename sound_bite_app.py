@@ -27,7 +27,7 @@ def load_tracks(path: str):
         df[c] = df[c].apply(lambda x: json.loads(x.replace("’","'").replace("—","-")) if isinstance(x,str) else [])
     return df
 
-tracks = load_tracks("songsnap_starter_40.csv")  # place CSV next to .py or use full path
+tracks = load_tracks("https://github.com/kathleendeleon/music_trivia_app/blob/main/trial_songset_40.csv")  # place CSV next to .py or use full path
 
 # --- UTILS ---
 CENTRAL = ZoneInfo("America/Chicago")
