@@ -43,17 +43,38 @@ def extract_spotify_track_id(spotify_url: str | None) -> str | None:
     m = re.search(r"spotify:track:([A-Za-z0-9]+)", spotify_url)
     return m.group(1) if m else None
 
+#def spotify_embed(track_url: str, height: int = 152):
+    #tid = extract_spotify_track_id(track_url)
+    #if not tid:
+        #st.caption("No Spotify link available for this track.")
+        #return
+    #components.iframe(
+        #f"https://open.spotify.com/embed/track/{tid}?utm_source=generator",
+        #height=height,
+        #width=300,
+        #scrolling=False,
+    #)
+
 def spotify_embed(track_url: str, height: int = 152):
     tid = extract_spotify_track_id(track_url)
     if not tid:
         st.caption("No Spotify link available for this track.")
         return
-    components.iframe(
-        f"https://open.spotify.com/embed/track/{tid}?utm_source=generator",
-        height=height,
-        width=300,
-        scrolling=False,
-    )
+    
+    embed_code = f'''
+    <div style="width: 100%;">
+        <iframe
+            src="https://open.spotify.com/embed/track/{tid}?utm_source=generator"
+            width="100%"
+            height="{height}"
+            frameborder="0"
+            allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+            loading="lazy">
+        </iframe>
+    </div>
+    '''
+    components.html(embed_code, height=height + 20)
+
 
 def to_int_or_none(x):
     try:
