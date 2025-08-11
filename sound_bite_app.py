@@ -189,8 +189,8 @@ def go_next_round():
 if st.session_state.round_num > ROUNDS_TARGET:
     st.subheader("🏁 Session Results")
     if len(st.session_state.history):
-        dfh = pd.DataFrame(st.session_state.history, index=False)
-        st.dataframe(dfh, use_container_width=True)
+        dfh = pd.DataFrame(st.session_state.history)
+        st.dataframe(dfh, use_container_width=True, hide_index=True)
     st.success(f"Final score: **{st.session_state.total_score}**")
 
     if st.button("Play Again 🔁"):
