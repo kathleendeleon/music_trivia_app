@@ -191,7 +191,11 @@ if st.session_state.round_num > ROUNDS_TARGET:
     if len(st.session_state.history):
         dfh = pd.DataFrame(st.session_state.history)
         st.dataframe(dfh, use_container_width=True, hide_index=True)
-    st.success(f"Final score: **{st.session_state.total_score}**")
+        max_score = len(dfh) * 500  # 500 max points per round
+        total_score = dfh["score"].sum()
+        percent_score = round((total_score / max_score) * 100, 1)
+    st.markdown(f"### 🏁 Final Score: **{total_score} / {max_score}**  ({percent_score}%)")
+    #st.success(f"Final score: **{st.session_state.total_score}**")
 
     if st.button("Play Again 🔁"):
         # Reset session
