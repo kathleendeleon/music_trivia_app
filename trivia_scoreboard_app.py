@@ -51,7 +51,7 @@ def spotify_embed(track_url: str, height: int = 152):
     components.iframe(
         f"https://open.spotify.com/embed/track/{tid}?utm_source=generator",
         height=height,
-        width=400,
+        width=300,
         scrolling=False,
     )
 
