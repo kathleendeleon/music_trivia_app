@@ -72,7 +72,7 @@ def score_year(year_true, year_guess):
     if yt is None or yg is None:
         return 500, 0
     dy = abs(yt - yg)
-    score = max(50, 500 - 50 * dy)  # 500 max, -50 per year off, floor 50
+    score = max(0, 500 - 50 * dy)  # 500 max, -50 per year off, floor 0
     return score, dy
 
 def pick_new_index(df_len: int, used: set[int]) -> int:
@@ -209,8 +209,8 @@ if submit and not st.session_state.locked:
         "round": st.session_state.round_num,
         "title": row.get("title",""),
         "artist": row.get("artist",""),
-        "your_guess": int(year_guess),
-        "answer_year": (int(float(year_true_raw)) if a_year != "unknown" else None),
+        "your_guess": str(year_guess),
+        "answer_year": str(year_true_raw),
         "error_years": int(err),
         "score": int(score),
     })
