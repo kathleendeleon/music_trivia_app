@@ -55,15 +55,28 @@ def to_int_or_none(x):
     except Exception:
         return None
 
-def score_year(year_true: int | None, year_guess: int) -> tuple[int, int]:
-    """Returns (score, abs_error)."""
-    if not isinstance(year_true, int):
-        # If year missing, give full credit so the game never punishes bad data
+def score_year(year_true, year_guess):
+    def to_int_or_none(x):
+        try:
+            if x is None: return None
+            if isinstance(x, str):
+                x = x.strip()
+                if x == "": return None
+            return int(float(x))
+        except Exception:
+            return None
+
+    yt = to_int_or_none(year_true)
+    yg = to_int_or_none(year_guess)
+
+    if yt is None or yg is None:
+        # Don’t punish players if data is missing
         return 500, 0
-    dy = abs(year_true - year_guess)
-    # Base 500, minus 25 points per year off, floor 50
+
+    dy = abs(yt - yg)
     score = max(50, 500 - 25 * dy)
     return score, dy
+
 
 def pick_new_index(df_len: int, used: set[int]) -> int:
     choices = [i for i in range(df_len) if i not in used]
