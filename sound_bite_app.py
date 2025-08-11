@@ -74,7 +74,7 @@ def score_year(year_true, year_guess):
         return 500, 0
 
     dy = abs(yt - yg)
-    score = max(50, 500 - 25 * dy)
+    score = max(50, 500 - 50 * dy)
     return score, dy
 
 
@@ -190,7 +190,7 @@ if st.session_state.round_num > ROUNDS_TARGET:
     st.subheader("🏁 Session Results")
     if len(st.session_state.history):
         dfh = pd.DataFrame(st.session_state.history)
-        st.dataframe(dfh, use_container_width=True)
+        st.dataframe(dfh, use_container_width=True, index=False)
     st.success(f"Final score: **{st.session_state.total_score}**")
 
     if st.button("Play Again 🔁"):
