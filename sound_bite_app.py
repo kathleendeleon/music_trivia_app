@@ -17,7 +17,7 @@ st.set_page_config(page_title="SongSnap++: Guess the Year", page_icon="📻", la
 # ------------------ SETTINGS / SECRETS ------------------
 DATASET_URL = st.secrets.get(
     "DATASET_URL",
-    os.getenv("DATASET_URL", "https://raw.githubusercontent.com/kathleendeleon/music_trivia_app/refs/heads/main/songsnap_from_spotify3.csv")
+    os.getenv("DATASET_URL", "https://raw.githubusercontent.com/kathleendeleon/music_trivia_app/refs/heads/main/songsnap_from_spotify4.csv")
 )
 ROUNDS_TARGET = 10
 CENTRAL = ZoneInfo("America/Chicago")
