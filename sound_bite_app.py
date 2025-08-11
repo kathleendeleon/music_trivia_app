@@ -170,8 +170,8 @@ if submit and not st.session_state.locked:
         "round": st.session_state.round_num,
         "title": row.get("title",""),
         "artist": row.get("artist",""),
-        "your_guess": int(year_guess),
-        "answer_year": (int(year_true) if isinstance(year_true, int) else None),
+        "your_guess": str(year_guess),
+        "answer_year": str(year_true),
         "error_years": int(err),
         "score": int(score),
     })
